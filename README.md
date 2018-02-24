@@ -14,9 +14,11 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 First, download dataset here.
 
 To train a model with rock dataset:
+
     $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock --data_dir <path to parent data directory> --batch_size 100 --output_dir ./output
 
 To test with trained model:
+
     $ python main.py --test --category rock --output_dir ./output --ckpt ./checkpoint/model.ckpt --sample_size 144
 
 ## Results
