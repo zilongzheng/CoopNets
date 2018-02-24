@@ -34,14 +34,14 @@ tf.flags.DEFINE_boolean('test', False, 'True if in testing mode')
 tf.flags.DEFINE_string('ckpt', None, 'Checkpoint path to load')
 tf.flags.DEFINE_integer('sample_size', 100, 'Number of images to generate during test.')
 
-def main(_):
 
+def main(_):
     model = CoopNet(
         net_type='object',
         num_epochs=FLAGS.num_epochs,
         image_size=FLAGS.image_size,
         batch_size=FLAGS.batch_size,
-        beta1 = FLAGS.beta1,
+        beta1=FLAGS.beta1,
         nTileRow=FLAGS.nTileRow, nTileCol=FLAGS.nTileCol,
         d_lr=FLAGS.d_lr, g_lr=FLAGS.g_lr, sigma=FLAGS.sigma,
         refsig=FLAGS.refsig, des_step_size=FLAGS.des_step_size, gen_step_size=FLAGS.gen_step_size,

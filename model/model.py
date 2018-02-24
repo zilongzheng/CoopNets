@@ -62,18 +62,7 @@ class CoopNet(object):
 
     def descriptor(self, inputs, reuse=False):
         with tf.variable_scope('des', reuse=reuse):
-            if self.type == 'texture':
-                conv1 = conv2d(inputs, 100, kernal=(15, 15), strides=(3, 3), padding="SAME", name="conv1")
-                conv1 = tf.nn.relu(conv1)
-
-                conv2 = conv2d(conv1, 70, kernal=(9, 9), strides=(1, 1), padding="SAME", name="conv2")
-                conv2 = tf.nn.relu(conv2)
-
-                conv3 = conv2d(conv2, 30, kernal=(7, 7), strides=(1, 1), padding="SAME", name="conv3")
-                conv3 = tf.nn.relu(conv3)
-
-                return conv3
-            elif self.type == 'object':
+            if self.type == 'object':
                 conv1 = conv2d(inputs, 64, kernal=(5, 5), strides=(2, 2), padding="SAME", activate_fn=leaky_relu,
                                name="conv1")
 
@@ -86,57 +75,40 @@ class CoopNet(object):
                 fc = fully_connected(conv3, 100, name="fc")
 
                 return fc
-            elif self.type == 'object_small':
-                conv1 = conv2d(inputs, 64, kernal=(4, 4), strides=(2, 2), padding="SAME", name="conv1")
-                conv1 = tf.nn.relu(conv1)
-
-                conv2 = conv2d(conv1, 128, kernal=(2, 2), strides=(1, 1), padding="SAME", name="conv2")
-                conv2 = tf.nn.relu(conv2)
-
-                fc = fully_connected(conv2, 1, name="fc")
-
-                return fc
             else:
                 return NotImplementedError
 
     def generator(self, inputs, reuse=False, is_training=True):
         with tf.variable_scope('gen', reuse=reuse):
-            if self.type == 'texture':
-                inputs = tf.reshape(inputs, (-1, 7, 7, 1))
-                convt1 = convt2d(inputs, (None, self.image_size // 16, self.image_size // 16, 512), kernal=(5, 5)
-                                 , strides=(2, 2), padding="SAME", name="convt1")
-
-            elif self.type == 'object' or self.type == 'object_small':
+            if self.type == 'object':
                 inputs = tf.reshape(inputs, [-1, 1, 1, self.z_size])
                 convt1 = convt2d(inputs, (None, self.image_size // 16, self.image_size // 16, 512), kernal=(4, 4)
                                  , strides=(1, 1), padding="VALID", name="convt1")
+                convt1 = tf.contrib.layers.batch_norm(convt1, is_training=is_training)
+                convt1 = leaky_relu(convt1)
 
+                convt2 = convt2d(convt1, (None, self.image_size // 8, self.image_size // 8, 256), kernal=(5, 5)
+                                 , strides=(2, 2), padding="SAME", name="convt2")
+                convt2 = tf.contrib.layers.batch_norm(convt2, is_training=is_training)
+                convt2 = leaky_relu(convt2)
+
+                convt3 = convt2d(convt2, (None, self.image_size // 4, self.image_size // 4, 128), kernal=(5, 5)
+                                 , strides=(2, 2), padding="SAME", name="convt3")
+                convt3 = tf.contrib.layers.batch_norm(convt3, is_training=is_training)
+                convt3 = leaky_relu(convt3)
+
+                convt4 = convt2d(convt3, (None, self.image_size // 2, self.image_size // 2, 64), kernal=(5, 5)
+                                 , strides=(2, 2), padding="SAME", name="convt4")
+                convt4 = tf.contrib.layers.batch_norm(convt4, is_training=is_training)
+                convt4 = leaky_relu(convt4)
+
+                convt5 = convt2d(convt4, (None, self.image_size, self.image_size, 3), kernal=(5, 5)
+                                 , strides=(2, 2), padding="SAME", name="convt5")
+                convt5 = tf.nn.tanh(convt5)
+
+                return convt5
             else:
                 return NotImplementedError
-
-            convt1 = tf.contrib.layers.batch_norm(convt1, is_training=is_training)
-            convt1 = leaky_relu(convt1)
-
-            convt2 = convt2d(convt1, (None, self.image_size // 8, self.image_size // 8, 256), kernal=(5, 5)
-                             , strides=(2, 2), padding="SAME", name="convt2")
-            convt2 = tf.contrib.layers.batch_norm(convt2, is_training=is_training)
-            convt2 = leaky_relu(convt2)
-
-            convt3 = convt2d(convt2, (None, self.image_size // 4, self.image_size // 4, 128), kernal=(5, 5)
-                             , strides=(2, 2), padding="SAME", name="convt3")
-            convt3 = tf.contrib.layers.batch_norm(convt3, is_training=is_training)
-            convt3 = leaky_relu(convt3)
-
-            convt4 = convt2d(convt3, (None, self.image_size // 2, self.image_size // 2, 64), kernal=(5, 5)
-                             , strides=(2, 2), padding="SAME", name="convt4")
-            convt4 = tf.contrib.layers.batch_norm(convt4, is_training=is_training)
-            convt4 = leaky_relu(convt4)
-
-            convt5 = convt2d(convt4, (None, self.image_size, self.image_size, 3), kernal=(5, 5)
-                             , strides=(2, 2), padding="SAME", name="convt5")
-            convt5 = tf.nn.tanh(convt5)
-
-            return convt5
 
     def langevin_dynamics_descriptor(self, sess, samples, gradient, batch_id):
         for i in xrange(self.des_sample_steps):
@@ -261,7 +233,7 @@ class CoopNet(object):
                 saver.save(sess, "%s/%s" % (self.model_dir, 'model.ckpt'), global_step=epoch)
 
     def test(self, sess, ckpt, sample_size):
-        assert(ckpt != None, 'no checkpoint provided.')
+        assert (ckpt != None, 'no checkpoint provided.')
 
         gen_res = self.generator(self.z, reuse=False)
 
