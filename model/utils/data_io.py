@@ -2,10 +2,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import math
 import numpy as np
-import os
-import tensorflow as tf
 from PIL import Image
 import scipy.misc
 
@@ -89,11 +88,5 @@ def img2cell(images, row_num=10, col_num=10, margin_syn=2):
     return cell_image
 
 def saveSampleResults(sample_results, filename, col_num=10, margin_syn=2):
-    # row_num = int(math.ceil(len(sample_results) / col_num))
     cell_image = img2cell(sample_results, col_num, col_num, margin_syn)
-    scipy.misc.imsave(filename, np.squeeze(cell_image[0]))
-
-if __name__ == '__main__':
-    imdb = DataSet('../dataset/Image/texture/ivy')
-    print(len(imdb))
-    print(imdb[0].shape)
+    scipy.misc.imsave(filename, np.squeeze(cell_image))

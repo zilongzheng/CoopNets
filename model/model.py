@@ -7,6 +7,7 @@ import math
 
 import numpy as np
 from progressbar import ETA, Bar, Percentage, ProgressBar
+from six.moves import xrange
 
 from model.utils.interpolate import *
 from model.utils.custom_ops import *
@@ -15,7 +16,8 @@ from model.utils.data_io import DataSet, saveSampleResults
 
 class CoopNet(object):
     def __init__(self, num_epochs=200, image_size=64, batch_size=100, nTileRow=12, nTileCol=12, d_lr=0.001, g_lr=0.0001,
-                 beta1=0.5, sigma=0.3, refsig=0.016, des_step_size=0.002, des_sample_steps=10, gen_step_size=0.1,
+                 beta1=0.5, gen_refsig=0.3, des_refsig=0.016, des_step_size=0.002, des_sample_steps=10,
+                 gen_step_size=0.1,
                  gen_sample_steps=0, net_type='object', log_step=10,
                  data_path='/tmp/data/', category='rock', output_dir='./output'):
         self.type = net_type
@@ -25,16 +27,16 @@ class CoopNet(object):
         self.nTileRow = nTileRow
         self.nTileCol = nTileCol
         self.num_chain = nTileRow * nTileCol
-        self.des_sample_steps = des_sample_steps
-        self.gen_sample_steps = gen_sample_steps
+        self.beta1 = beta1
 
         self.d_lr = d_lr
         self.g_lr = g_lr
-        self.beta1 = beta1
         self.delta1 = des_step_size
-        self.refsig = refsig
+        self.sigma1 = des_refsig
         self.delta2 = gen_step_size
-        self.sigma = sigma
+        self.sigma2 = gen_refsig
+        self.t1 = des_sample_steps
+        self.t2 = gen_sample_steps
 
         self.data_path = os.path.join(data_path, category)
         self.log_step = log_step
@@ -59,6 +61,157 @@ class CoopNet(object):
         self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
         self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
         self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
+
+    def build_model(self):
+        self.gen_res = self.generator(self.z, reuse=False)
+
+        obs_res = self.descriptor(self.obs, reuse=False)
+        syn_res = self.descriptor(self.syn, reuse=True)
+        self.dLdI = tf.gradients(syn_res, self.syn)[0]
+
+        self.recon_err_mean, self.recon_err_update = tf.contrib.metrics.streaming_mean_squared_error(
+            tf.reduce_mean(self.syn, axis=0), tf.reduce_mean(self.obs, axis=0))
+
+        # descriptor variables
+        des_vars = [var for var in tf.trainable_variables() if var.name.startswith('des')]
+
+        des_loss = tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0))
+        self.des_loss_mean, self.des_loss_update = tf.contrib.metrics.streaming_mean(des_loss)
+
+        des_optim = tf.train.AdamOptimizer(self.d_lr, beta1=self.beta1)
+        des_grads_vars = des_optim.compute_gradients(des_loss, var_list=des_vars)
+        des_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in des_grads_vars if '/w' in var.name]
+        # update by mean of gradients
+        self.apply_d_grads = des_optim.apply_gradients(des_grads_vars)
+
+        # generator variables
+        gen_vars = [var for var in tf.trainable_variables() if var.name.startswith('gen')]
+
+        gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res), axis=0)
+        self.gen_loss_mean, self.gen_loss_update = tf.contrib.metrics.streaming_mean(tf.reduce_mean(gen_loss))
+        self.dLdZ = tf.gradients(gen_loss, self.z)[0]
+
+        gen_optim = tf.train.AdamOptimizer(self.g_lr, beta1=self.beta1)
+        gen_grads_vars = gen_optim.compute_gradients(gen_loss, var_list=gen_vars)
+        gen_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in gen_grads_vars if '/w' in var.name]
+        self.apply_g_grads = gen_optim.apply_gradients(gen_grads_vars)
+
+        tf.summary.scalar('des_loss', self.des_loss_mean)
+        tf.summary.scalar('gen_loss', self.gen_loss_mean)
+        tf.summary.scalar('recon_err', self.recon_err_mean)
+
+        self.summary_op = tf.summary.merge_all()
+
+    def langevin_dynamics_descriptor(self, sess, samples, batch_id):
+        for i in xrange(self.t1):
+            noise = np.random.randn(*samples.shape)
+            grad = sess.run(self.dLdI, feed_dict={self.syn: samples})
+            samples = samples - 0.5 * self.delta1 * self.delta1 * (samples / self.sigma1 / self.sigma1 - grad) \
+                      + self.delta1 * noise
+            self.pbar.update(batch_id * self.t1 + i + 1)
+        return samples
+
+    def langevin_dynamics_generator(self, sess, z, img, batch_id):
+        for i in xrange(self.t2):
+            noise = np.random.randn(*z.shape)
+            grad = sess.run(self.dLdZ, feed_dict={self.obs: img, self.z: z})
+            z = z - 0.5 * self.delta2 * self.delta2 * (z + grad) + self.delta2 * noise
+            self.pbar.update(batch_id * self.t2 + i + 1)
+        return z
+
+    def train(self, sess):
+        self.build_model()
+
+        # Prepare training data
+        train_data = DataSet(self.data_path, image_size=self.image_size)
+        num_batches = int(math.ceil(len(train_data) / self.batch_size))
+
+        # initialize training
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+
+        sample_results = np.random.randn(self.num_chain * num_batches, self.image_size, self.image_size, 3)
+
+        saver = tf.train.Saver(max_to_keep=50)
+
+        writer = tf.summary.FileWriter(self.log_dir, sess.graph)
+
+        for epoch in xrange(self.num_epochs):
+
+            widgets = ["Epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
+            self.pbar = ProgressBar(maxval=num_batches * (self.t1 + self.t2),
+                                    widgets=widgets)
+            self.pbar.start()
+
+            for i in xrange(num_batches):
+                obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
+                z_vec = np.random.randn(self.num_chain, self.z_size)
+                # Step G0: generate X ~ N(0, 1)
+                g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
+                # Step D1: obtain synthesized images Y
+                syn = self.langevin_dynamics_descriptor(sess, g_res, i)
+                # Step G1: update X using Y as training image
+                z_vec = self.langevin_dynamics_generator(sess, z_vec, syn, i)
+                # Step D2: update D net
+                sess.run([self.des_loss_update, self.apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
+                # Step G2: update G net
+                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
+
+                # Compute MSE
+                sess.run(self.recon_err_update, feed_dict={self.obs: obs_data, self.syn: syn})
+
+                sample_results[i * self.num_chain:(i + 1) * self.num_chain] = syn
+
+                if i == 0 and epoch % self.log_step == 0:
+                    if not os.path.exists(self.sample_dir):
+                        os.makedirs(self.sample_dir)
+                    saveSampleResults(syn, "%s/des%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
+                    saveSampleResults(g_res, "%s/gen%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
+
+            self.pbar.finish()
+
+            [des_loss_avg, gen_loss_avg, mse, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
+                                                                   self.recon_err_mean,
+                                                                   self.summary_op])
+
+            print('Epoch #{:d}, descriptor loss: {:.4f},  generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
+                                                                                                           des_loss_avg,
+                                                                                                           gen_loss_avg,
+                                                                                                           mse))
+            writer.add_summary(summary, epoch)
+
+            if epoch % self.log_step == 0:
+                if not os.path.exists(self.model_dir):
+                    os.makedirs(self.model_dir)
+                saver.save(sess, "%s/%s" % (self.model_dir, 'model.ckpt'), global_step=epoch)
+
+    def test(self, sess, ckpt, sample_size):
+        assert (ckpt != None, 'no checkpoint provided.')
+
+        gen_res = self.generator(self.z, reuse=False)
+
+        num_batches = int(math.ceil(sample_size / self.num_chain))
+
+        saver = tf.train.Saver()
+
+        sess.run(tf.global_variables_initializer())
+        saver.restore(sess, ckpt)
+        print('Loading checkpoint {}.'.format(ckpt))
+
+        test_dir = os.path.join(self.output_dir, 'test')
+        if not os.path.exists(test_dir):
+            os.makedirs(test_dir)
+
+        for i in xrange(num_batches):
+            z_vec = np.random.randn(min(sample_size, self.num_chain), self.z_size)
+            g_res = sess.run(gen_res, feed_dict={self.z: z_vec})
+            saveSampleResults(g_res, "%s/gen%03d.png" % (test_dir, i), col_num=self.nTileCol)
+
+            # output interpolation results
+            interp_z = linear_interpolator(z_vec, npairs=self.nTileRow, ninterp=self.nTileCol)
+            interp = sess.run(gen_res, feed_dict={self.z: interp_z})
+            saveSampleResults(interp, "%s/interp%03d.png" % (test_dir, i), col_num=self.nTileCol)
+            sample_size = sample_size - self.num_chain
 
     def descriptor(self, inputs, reuse=False):
         with tf.variable_scope('des', reuse=reuse):
@@ -109,153 +262,3 @@ class CoopNet(object):
                 return convt5
             else:
                 return NotImplementedError
-
-    def langevin_dynamics_descriptor(self, sess, samples, gradient, batch_id):
-        for i in xrange(self.des_sample_steps):
-            noise = np.random.randn(*samples.shape)
-            grad = sess.run(gradient, feed_dict={self.syn: samples})
-            samples = samples - 0.5 * self.delta1 * self.delta1 * (samples / self.refsig / self.refsig - grad) \
-                      + self.delta1 * noise
-            self.pbar.update(batch_id * self.des_sample_steps + i + 1)
-        return samples
-
-    def langevin_dynamics_generator(self, sess, z, img, gradient, batch_id):
-        for i in xrange(self.gen_sample_steps):
-            noise = np.random.randn(*z.shape)
-            grad = sess.run(gradient, feed_dict={self.obs: img, self.z: z})
-            z = z - 0.5 * self.delta2 * self.delta2 * (z / self.refsig / self.refsig + grad) + self.delta2 * noise
-            self.pbar.update(batch_id * self.gen_sample_steps + i + 1)
-        return z
-
-    def train(self, sess):
-
-        gen_res = self.generator(self.z, reuse=False)
-
-        obs_res = self.descriptor(self.obs, reuse=False)
-        syn_res = self.descriptor(self.syn, reuse=True)
-        sample_loss = tf.reduce_sum(syn_res)
-        dLdI = tf.gradients(sample_loss, self.syn)[0]
-
-        recon_err_mean, recon_err_update = tf.contrib.metrics.streaming_mean_squared_error(
-            tf.reduce_mean(self.syn, axis=0), tf.reduce_mean(self.obs, axis=0))
-
-        # Prepare training data
-        train_data = DataSet(self.data_path, image_size=self.image_size)
-        num_batches = int(math.ceil(len(train_data) / self.batch_size))
-
-        # descriptor variables
-        des_vars = [var for var in tf.trainable_variables() if var.name.startswith('des')]
-
-        des_loss = tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0))
-        des_loss_mean, des_loss_update = tf.contrib.metrics.streaming_mean(des_loss)
-
-        des_optim = tf.train.AdamOptimizer(self.d_lr, beta1=self.beta1)
-        des_grads_vars = des_optim.compute_gradients(des_loss, var_list=des_vars)
-        des_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in des_grads_vars if '/w' in var.name]
-        # update by mean of gradients
-        apply_d_grads = des_optim.apply_gradients(des_grads_vars)
-
-        # generator variables
-        gen_vars = [var for var in tf.trainable_variables() if var.name.startswith('gen')]
-
-        gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma * self.sigma) * tf.square(self.obs - gen_res), axis=0)
-        gen_loss_mean, gen_loss_update = tf.contrib.metrics.streaming_mean(tf.reduce_mean(gen_loss))
-        dLdZ = tf.gradients(gen_loss, self.z)[0]
-
-        gen_optim = tf.train.AdamOptimizer(self.g_lr, beta1=self.beta1)
-        gen_grads_vars = gen_optim.compute_gradients(gen_loss, var_list=gen_vars)
-        gen_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in gen_grads_vars if '/w' in var.name]
-        apply_g_grads = gen_optim.apply_gradients(gen_grads_vars)
-
-        tf.summary.scalar('des_loss', des_loss_mean)
-        tf.summary.scalar('gen_loss', gen_loss_mean)
-        tf.summary.scalar('recon_err', recon_err_mean)
-
-        summary_op = tf.summary.merge_all()
-
-        # initialize training
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-
-        sample_results = np.random.randn(self.num_chain * num_batches, self.image_size, self.image_size, 3)
-
-        saver = tf.train.Saver(max_to_keep=50)
-
-        writer = tf.summary.FileWriter(self.log_dir, sess.graph)
-
-        for epoch in xrange(self.num_epochs):
-
-            widgets = ["Epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
-            self.pbar = ProgressBar(maxval=num_batches * (self.des_sample_steps + self.gen_sample_steps),
-                                    widgets=widgets)
-            self.pbar.start()
-
-            for i in xrange(num_batches):
-                obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
-                z_vec = np.random.randn(self.num_chain, self.z_size)
-                # Step G0: generate X ~ N(0, 1)
-                g_res = sess.run(gen_res, feed_dict={self.z: z_vec})
-                # Step D1: obtain synthesized images Y
-                syn = self.langevin_dynamics_descriptor(sess, g_res, dLdI, i)
-                # Step G1: update X using Y as training image
-                z_vec = self.langevin_dynamics_generator(sess, z_vec, syn, dLdZ, i)
-                # Step D2: update D net
-                sess.run([des_loss_update, apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
-                # Step G2: update G net
-                sess.run([gen_loss_update, apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
-
-                # Compute MSE
-                sess.run(recon_err_update, feed_dict={self.obs: obs_data, self.syn: syn})
-
-                sample_results[i * self.num_chain:(i + 1) * self.num_chain] = syn
-
-                if i == 0 and epoch % self.log_step == 0:
-                    if not os.path.exists(self.sample_dir):
-                        os.makedirs(self.sample_dir)
-                    saveSampleResults(syn, "%s/des%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
-                    saveSampleResults(g_res, "%s/gen%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
-
-            self.pbar.finish()
-
-            [des_loss_avg, gen_loss_avg, mse, summary] = sess.run([des_loss_mean, gen_loss_mean,
-                                                                   recon_err_mean,
-                                                                   summary_op])
-
-            print('Epoch #{:d}, descriptor loss: {:.4f},  generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
-                                                                                                           des_loss_avg,
-                                                                                                           gen_loss_avg,
-                                                                                                           mse))
-            writer.add_summary(summary, epoch)
-
-            if epoch % self.log_step == 0:
-                if not os.path.exists(self.model_dir):
-                    os.makedirs(self.model_dir)
-                saver.save(sess, "%s/%s" % (self.model_dir, 'model.ckpt'), global_step=epoch)
-
-    def test(self, sess, ckpt, sample_size):
-        assert (ckpt != None, 'no checkpoint provided.')
-
-        gen_res = self.generator(self.z, reuse=False)
-
-        num_batches = int(math.ceil(sample_size / self.num_chain))
-
-        saver = tf.train.Saver()
-
-        sess.run(tf.global_variables_initializer())
-        saver.restore(sess, ckpt)
-        print('Loading checkpoint {}.'.format(ckpt))
-
-        test_dir = os.path.join(self.output_dir, 'test')
-        if not os.path.exists(test_dir):
-            os.makedirs(test_dir)
-
-        for i in xrange(num_batches):
-            z_vec = np.random.randn(min(sample_size, self.num_chain), self.z_size)
-            g_res = sess.run(gen_res, feed_dict={self.z: z_vec})
-            saveSampleResults(g_res, "%s/gen%03d.png" % (test_dir, i), col_num=self.nTileCol)
-
-            # output interpolation results
-            interp_z = linear_interpolator(z_vec, npairs=self.nTileRow, ninterp=self.nTileCol)
-            interp = sess.run(gen_res, feed_dict={self.z: interp_z})
-            saveSampleResults(interp, "%s/interp%03d.png" % (test_dir, i), col_num=self.nTileCol)
-            sample_size = sample_size - self.num_chain

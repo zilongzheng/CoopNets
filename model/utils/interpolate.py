@@ -24,7 +24,6 @@ def linear_interpolator(z, npairs=8, ninterp=8):
     z_dim = z.shape[1]
     interp_z = np.zeros(shape=(npairs * ninterp, z_dim))
     line_points = np.expand_dims(np.linspace(0, 1, ninterp), 0)
-    # print line_points.transpose().shape
     for ip in xrange(npairs):
         pair = np.random.permutation(num_z)
         l_z = z[np.newaxis, pair[0]]

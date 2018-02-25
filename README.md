@@ -8,12 +8,13 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 - [Tensorflow r1.0+](https://www.tensorflow.org/install/)
 - [Scipy](https://www.scipy.org/install.html)
 - [pillow](https://pillow.readthedocs.io/en/latest/installation.html)
+- [progressbar](http://progressbar-2.readthedocs.io/en/latest/index.html)
 
 ## Usage
 
 First, download [dataset](http://www.stat.ucla.edu/~ywu/CoopNets/doc/CoopNet_code.zip) and save it to `./data` directory.
 
-To train a model with *rock* dataset:
+To train a model with ***rock*** dataset:
 
     $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock --data_dir ./data --batch_size 100 --output_dir ./output
 synthesized results will be saved in `./output/rock/synthesis`
