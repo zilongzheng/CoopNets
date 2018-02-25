@@ -11,22 +11,31 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 
 ## Training
 
-First, download dataset here.
+First, download [dataset](http://www.stat.ucla.edu/~ywu/CoopNets/doc/CoopNet_code.zip) and save it to `data` directory.
 
-To train a model with rock dataset:
+To train a model with `rock` dataset:
 
-    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock --data_dir <path to parent data directory> --batch_size 100 --output_dir ./output
+    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock --data_dir ./data --batch_size 100 --output_dir ./output
+Synthesized results will be saved in `./output/rock/synthesis`
 
-To test with trained model:
+To test generator by synthesizing interpolation results with trained model:
 
-    $ python main.py --test --category rock --output_dir ./output --ckpt ./checkpoint/model.ckpt --sample_size 144
+    $ python main.py --test --category rock --output_dir ./output --ckpt ./output/rock/checkpoints/model.ckpt --sample_size 144
+Testing results will be saved in `./output/rock/test`
 
 ## Results
+***Descriptor result***
+![descriptor](assets/descriptor.png)
 
-![result](assests/result.png)
+***Generator result***
+![generator](assets/generator.png)
+
+***Interpolation result***
+![interpolation](assets/interpolation.png)
+
 
 ## Reference
-    @inproceedings{coopnet,
+    @inproceedings{coopnets,
         author = {Xie, Jianwen and Lu, Yang and Gao, Ruiqi and Wu, Ying Nian},
         title = {Cooperative Learning of Energy-Based Model and Latent Variable Model via MCMC Teaching},
         booktitle = {The 32nd AAAI Conference on Artitifical Intelligence},
