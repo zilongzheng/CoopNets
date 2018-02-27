@@ -3,9 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import math
 
-import numpy as np
 from progressbar import ETA, Bar, Percentage, ProgressBar
 from six.moves import xrange
 
