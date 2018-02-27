@@ -197,7 +197,7 @@ class CoopNet(object):
             # make graph immutable
             tf.get_default_graph().finalize()
 
-            print('Epoch #{:d}, descriptor loss: {:.4f},  generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
+            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
                                                                                                             des_loss_avg,
                                                                                                             gen_loss_avg,
                                                                                                             mse))
