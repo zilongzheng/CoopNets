@@ -17,9 +17,8 @@ from model.utils.data_io import DataSet, saveSampleResults
 class CoopNet(object):
     def __init__(self, num_epochs=200, image_size=64, batch_size=100, nTileRow=12, nTileCol=12, d_lr=0.001, g_lr=0.0001,
                  beta1=0.5, gen_refsig=0.3, des_refsig=0.016, des_step_size=0.002, des_sample_steps=10,
-                 gen_step_size=0.1,
-                 gen_sample_steps=0, net_type='object', log_step=10,
-                 data_path='/tmp/data/', category='rock', output_dir='./output'):
+                 gen_step_size=0.1, gen_sample_steps=0, net_type='object', log_step=10,
+                 data_path='/tmp/data/', category='rock_arch', output_dir='./output'):
         self.type = net_type
         self.num_epochs = num_epochs
         self.batch_size = batch_size
