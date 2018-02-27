@@ -59,8 +59,8 @@ class CoopNet(object):
 
         self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
         self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        #self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
-        self.z = tf.Variable(tf.random_normal(shape=(self.num_chain, self.z_size)))
+        self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
+        #self.z = tf.Variable(tf.random_normal(shape=(self.num_chain, self.z_size)))
 
     def build_model(self):
         self.gen_res = self.generator(self.z, reuse=False)
@@ -159,11 +159,11 @@ class CoopNet(object):
 
             for i in xrange(num_batches):
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
-                #z_vec = np.random.randn(self.num_chain, self.z_size)
+                z_vec = np.random.randn(self.num_chain, self.z_size)
                 # Step G0: generate X ~ N(0, 1)
-                #g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
-                sess.run(self.z.initializer)
-                g_res = sess.run(self.gen_res)
+                g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
+                #sess.run(self.z.initializer)
+                #g_res = sess.run(self.gen_res)
                 # Step D1: obtain synthesized images Y
                 syn = sess.run(self.langevin_dynamics_descriptor(sess, g_res, i), feed_dict={self.syn: g_res})
                 # Step G1: update X using Y as training image
@@ -171,8 +171,8 @@ class CoopNet(object):
                 # Step D2: update D net
                 sess.run([self.des_loss_update, self.apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
                 # Step G2: update G net
-                #sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
-                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn})
+                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
+                #sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn})
 
                 # Compute MSE
                 sess.run(self.recon_err_update, feed_dict={self.obs: obs_data, self.syn: syn})
