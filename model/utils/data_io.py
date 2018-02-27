@@ -20,7 +20,7 @@ class DataSet(object):
         self.image_size = image_size
         self.images = np.zeros((len(self.imgList), image_size, image_size, 3)).astype(float)
         print('Loading dataset: {}'.format(data_path))
-        for i in range(len(self.imgList)):
+        for i in xrange(len(self.imgList)):
             image = Image.open(os.path.join(self.root_dir, self.imgList[i])).convert('RGB')
             image = image.resize((self.image_size, self.image_size))
             image = np.array(image).astype(float)
