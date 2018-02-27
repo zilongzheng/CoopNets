@@ -59,7 +59,8 @@ class CoopNet(object):
 
         self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
         self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
+        #self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
+        self.z = tf.Variable(tf.random_normal(shape=(self.num_chain, self.z_size)))
 
     def build_model(self):
         self.gen_res = self.generator(self.z, reuse=False)
@@ -102,12 +103,26 @@ class CoopNet(object):
         self.summary_op = tf.summary.merge_all()
 
     def langevin_dynamics_descriptor(self, sess, samples, batch_id):
-        for i in xrange(self.t1):
-            noise = np.random.randn(*samples.shape)
-            grad = sess.run(self.dLdI, feed_dict={self.syn: samples})
-            samples = samples - 0.5 * self.delta1 * self.delta1 * (samples / self.sigma1 / self.sigma1 - grad) \
-                      + self.delta1 * noise
-            self.pbar.update(batch_id * self.t1 + i + 1)
+        n = tf.constant(self.t1)
+
+        def cond(i, samples):
+             return i < n
+
+        def body(i, samples):
+             noise = tf.random_normal(shape=samples.shape)
+             grad = self.dLdI
+             samples = samples - 0.5 * self.delta1 * self.delta1 * (samples / self.sigma1 / self.sigma1 - grad) + self.delta1 * noise
+             return i+1, samples
+
+        i, samples = tf.while_loop(cond, body, (1, samples))
+
+        #
+        # for i in xrange(self.t1):
+        #      noise = np.random.randn(*samples.shape)
+        #      grad = sess.run(self.dLdI, feed_dict={self.syn: samples})
+        #      samples = samples - 0.5 * self.delta1 * self.delta1 * (samples / self.sigma1 / self.sigma1 - grad) + self.delta1 * noise
+        #      self.pbar.update(batch_id * self.t1 + i + 1)
+
         return samples
 
     def langevin_dynamics_generator(self, sess, z, img, batch_id):
@@ -144,17 +159,20 @@ class CoopNet(object):
 
             for i in xrange(num_batches):
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
-                z_vec = np.random.randn(self.num_chain, self.z_size)
+                #z_vec = np.random.randn(self.num_chain, self.z_size)
                 # Step G0: generate X ~ N(0, 1)
-                g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
+                #g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
+                sess.run(self.z.initializer)
+                g_res = sess.run(self.gen_res)
                 # Step D1: obtain synthesized images Y
-                syn = self.langevin_dynamics_descriptor(sess, g_res, i)
+                syn = sess.run(self.langevin_dynamics_descriptor(sess, g_res, i), feed_dict={self.syn: g_res})
                 # Step G1: update X using Y as training image
-                z_vec = self.langevin_dynamics_generator(sess, z_vec, syn, i)
+                #z_vec = self.langevin_dynamics_generator(sess, z_vec, syn, i)
                 # Step D2: update D net
                 sess.run([self.des_loss_update, self.apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
                 # Step G2: update G net
-                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
+                #sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
+                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn})
 
                 # Compute MSE
                 sess.run(self.recon_err_update, feed_dict={self.obs: obs_data, self.syn: syn})
@@ -185,7 +203,7 @@ class CoopNet(object):
                 saver.save(sess, "%s/%s" % (self.model_dir, 'model.ckpt'), global_step=epoch)
 
     def test(self, sess, ckpt, sample_size):
-        assert (ckpt != None, 'no checkpoint provided.')
+        assert ckpt is not None, 'no checkpoint provided.'
 
         gen_res = self.generator(self.z, reuse=False)
 
