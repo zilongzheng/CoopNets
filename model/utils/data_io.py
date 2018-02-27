@@ -74,7 +74,7 @@ def img2cell(images, row_num=10, col_num=10, margin_syn=2):
     num_cells = int(math.ceil(num_images / (col_num * row_num)))
     cell_image = np.zeros((num_cells, row_num * image_size + (row_num-1)*margin_syn,
                            col_num * image_size + (col_num-1)*margin_syn, 3))
-    for i in xrange(num_images):
+    for i in range(num_images):
         cell_id = int(math.floor(i / (col_num * row_num)))
         idx = i % (col_num * row_num)
         ir = int(math.floor(idx / col_num))

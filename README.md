@@ -14,9 +14,9 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 
 First, download [dataset](http://www.stat.ucla.edu/~ywu/CoopNets/doc/CoopNet_code.zip) and save it to `./data` directory.
 
-To train a model with ***rock*** dataset:
+To train a model with ***rock_arch*** dataset:
 
-    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock --data_dir ./data --batch_size 100 --output_dir ./output
+    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock_arch --data_dir ./data --batch_size 100 --output_dir ./output
 synthesized results will be saved in `./output/rock/synthesis`
 
 To test generator by synthesizing interpolation results with trained model:
