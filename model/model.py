@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import sys
 import math
 import numpy as np
 
@@ -101,7 +102,7 @@ class CoopNet(object):
 
         self.summary_op = tf.summary.merge_all()
 
-    def langevin_dynamics_descriptor(self, syn):
+    def langevin_dynamics_descriptor(self, syn_arg):
         def cond(i, syn):
              return tf.less(i,self.t1)
 
@@ -113,22 +114,21 @@ class CoopNet(object):
              return tf.add(i,1), syn
 
         i = tf.constant(0)
-        i, syn = tf.while_loop(cond, body, [i, syn])
+        i, syn = tf.while_loop(cond, body, [i, syn_arg])
         return syn
 
-    def langevin_dynamics_generator(self, z):
+    def langevin_dynamics_generator(self, z_arg):
         def cond(i, z):
             return tf.less(i, self.t2)
 
         def body(i, z):
             noise = tf.random_normal(shape=[self.num_chain, self.z_size])
-            # TODO fix grad computation (equals None) (Nijkamp)
-            #grad = tf.gradients(self.gen_loss, z)[0]
-            #z = z - 0.5 * self.delta2 * self.delta2 * (z + grad) + self.delta2 * noise
+            grad = tf.gradients(self.gen_loss, z_arg)[0]
+            z = z - 0.5 * self.delta2 * self.delta2 * (z + grad) + self.delta2 * noise
             return tf.add(i, 1), z
 
         i = tf.constant(0)
-        i, z = tf.while_loop(cond, body, [i, z])
+        i, z = tf.while_loop(cond, body, [i, z_arg])
         return z
 
     def train(self, sess):
@@ -154,23 +154,23 @@ class CoopNet(object):
         for epoch in xrange(self.num_epochs):
 
             widgets = ["Epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
-            pbar = ProgressBar(maxval=num_batches * (self.t1 + self.t2),
-                                    widgets=widgets)
+            pbar = ProgressBar(maxval=num_batches, widgets=widgets, fd=sys.stdout)
             pbar.start()
 
             for i in xrange(num_batches):
+                pbar.update(i+1)
+
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
                 z_vec = np.random.randn(self.num_chain, self.z_size)
+
                 # Step G0: generate X ~ N(0, 1)
                 g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
                 # Step D1: obtain synthesized images Y
                 if self.t1 > 0:
                     syn = sess.run(langevin_descriptor, feed_dict={self.syn: g_res})
-                    pbar.update((i+1) * self.t1)
                 # Step G1: update X using Y as training image
                 if self.t2 > 0:
                     z_vec = sess.run(langevin_generator, feed_dict={self.z: z_vec, self.obs: syn, self.gen_res: g_res})
-                    pbar.update((i+1) * self.t1 + (i+1) * self.t2)
                 # Step D2: update D net
                 sess.run([self.des_loss_update, self.apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
                 # Step G2: update G net
@@ -198,9 +198,9 @@ class CoopNet(object):
             tf.get_default_graph().finalize()
 
             print('Epoch #{:d}, descriptor loss: {:.4f},  generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
-                                                                                                           des_loss_avg,
-                                                                                                           gen_loss_avg,
-                                                                                                           mse))
+                                                                                                            des_loss_avg,
+                                                                                                            gen_loss_avg,
+                                                                                                            mse))
             writer.add_summary(summary, epoch)
 
             if epoch % self.log_step == 0:
