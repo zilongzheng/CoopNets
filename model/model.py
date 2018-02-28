@@ -194,12 +194,11 @@ class CoopNet(object):
                     saveSampleResults(g_res, "%s/gen%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
 
             [des_loss_avg, gen_loss_avg, mse_avg, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
-                                                                       self.recon_err_mean,
-                                                                       self.summary_op])
+                                                                       self.recon_err_mean, self.summary_op])
 
             # log
-            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, avg. L2 distance: {:4.4f}'.format(
-                epoch, des_loss_avg, gen_loss_avg, mse_avg))
+            print('Epoch #{:d}, avg. descriptor loss: {:.4f}, avg. generator loss: {:.4f},'
+                  ' avg. L2 distance: {:4.4f}'.format(epoch, des_loss_avg, gen_loss_avg, mse_avg))
             writer.add_summary(summary, epoch)
             writer.flush()
 
