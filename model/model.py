@@ -58,9 +58,9 @@ class CoopNet(object):
         elif self.type == 'object_small':
             self.z_size = 2
 
-        self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
+        self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32, name='syn')
+        self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32, name='obs')
+        self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32, name='z')
 
     def build_model(self):
         self.gen_res = self.generator(self.z, reuse=False)
@@ -107,29 +107,31 @@ class CoopNet(object):
              return tf.less(i,self.t1)
 
         def body(i, syn):
-             noise = tf.random_normal(shape=[self.num_chain, self.image_size, self.image_size, 3])
+             noise = tf.random_normal(shape=[self.num_chain, self.image_size, self.image_size, 3], name='noise')
              syn_res = self.descriptor(syn, reuse=True)
-             grad = tf.gradients(syn_res, syn)[0]
+             grad = tf.gradients(syn_res, syn, name='grad_des')[0]
              syn = syn - 0.5 * self.delta1 * self.delta1 * (syn / self.sigma1 / self.sigma1 - grad) + self.delta1 * noise
              return tf.add(i,1), syn
 
-        i = tf.constant(0)
-        i, syn = tf.while_loop(cond, body, [i, syn_arg])
-        return syn
+        with tf.name_scope("langevin_dynamics_descriptor"):
+            i = tf.constant(0)
+            i, syn = tf.while_loop(cond, body, [i, syn_arg])
+            return syn
 
     def langevin_dynamics_generator(self, z_arg):
         def cond(i, z):
             return tf.less(i, self.t2)
 
         def body(i, z):
-            noise = tf.random_normal(shape=[self.num_chain, self.z_size])
-            grad = tf.gradients(self.gen_loss, z_arg)[0]
+            noise = tf.random_normal(shape=[self.num_chain, self.z_size], name='noise')
+            grad = tf.gradients(self.gen_loss, z_arg, name='grad_gen')[0]
             z = z - 0.5 * self.delta2 * self.delta2 * (z + grad) + self.delta2 * noise
             return tf.add(i, 1), z
 
-        i = tf.constant(0)
-        i, z = tf.while_loop(cond, body, [i, z_arg])
-        return z
+        with tf.name_scope("langevin_dynamics_generator"):
+            i = tf.constant(0)
+            i, z = tf.while_loop(cond, body, [i, z_arg])
+            return z
 
     def train(self, sess):
         self.build_model()
@@ -148,8 +150,16 @@ class CoopNet(object):
 
         writer = tf.summary.FileWriter(self.log_dir, sess.graph)
 
+        # unrolled langevins
         langevin_descriptor = self.langevin_dynamics_descriptor(self.syn)
         langevin_generator = self.langevin_dynamics_generator(self.z)
+
+        # make graph immutable
+        tf.get_default_graph().finalize()
+
+        # store graph in protobuf
+        with open(self.model_dir + '/graphpb.txt', 'w') as f:
+            f.write(str(tf.get_default_graph().as_graph_def()))
 
         for epoch in xrange(self.num_epochs):
 
@@ -194,14 +204,12 @@ class CoopNet(object):
                                                                    self.recon_err_mean,
                                                                    self.summary_op])
 
-            # make graph immutable
-            tf.get_default_graph().finalize()
 
-            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
-                                                                                                            des_loss_avg,
-                                                                                                            gen_loss_avg,
-                                                                                                            mse))
+            # log
+            print('Epoch #{:d}, descriptor loss: {:.4f},generator loss: {:.4f}, '
+                'Avg MSE: {:4.4f}'.format(epoch, des_loss_avg, gen_loss_avg, mse))
             writer.add_summary(summary, epoch)
+            writer.flush()
 
             if epoch % self.log_step == 0:
                 if not os.path.exists(self.model_dir):
