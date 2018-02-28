@@ -3,7 +3,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-from progressbar import ETA, Bar, Percentage, ProgressBar
 from six.moves import xrange
 
 from model.utils.interpolate import *
@@ -64,28 +63,27 @@ class CoopNet(object):
         obs_res = self.descriptor(self.obs, reuse=False)
         syn_res = self.descriptor(self.syn, reuse=True)
 
-        self.recon_err_mean, self.recon_err_update = tf.contrib.metrics.streaming_mean_squared_error(
-            tf.reduce_mean(self.syn, axis=0), tf.reduce_mean(self.obs, axis=0))
-
+        self.recon_err = tf.reduce_mean(
+            tf.pow(tf.subtract(tf.reduce_mean(self.syn, axis=0), tf.reduce_mean(self.obs, axis=0)), 2))
+        self.recon_err_mean, self.recon_err_update = tf.contrib.metrics.streaming_mean(self.recon_err)
 
         # descriptor variables
         des_vars = [var for var in tf.trainable_variables() if var.name.startswith('des')]
 
-        des_loss = tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0))
-        self.des_loss_mean, self.des_loss_update = tf.contrib.metrics.streaming_mean(des_loss)
+        self.des_loss = tf.reduce_mean(tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0)))
+        self.des_loss_mean, self.des_loss_update = tf.contrib.metrics.streaming_mean(self.des_loss)
 
         des_optim = tf.train.AdamOptimizer(self.d_lr, beta1=self.beta1)
-        des_grads_vars = des_optim.compute_gradients(des_loss, var_list=des_vars)
+        des_grads_vars = des_optim.compute_gradients(self.des_loss, var_list=des_vars)
         des_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in des_grads_vars if '/w' in var.name]
         # update by mean of gradients
         self.apply_d_grads = des_optim.apply_gradients(des_grads_vars)
 
-
         # generator variables
         gen_vars = [var for var in tf.trainable_variables() if var.name.startswith('gen')]
 
-        self.gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res), axis=0)
-        self.gen_loss_mean, self.gen_loss_update = tf.contrib.metrics.streaming_mean(tf.reduce_mean(self.gen_loss))
+        self.gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res))
+        self.gen_loss_mean, self.gen_loss_update = tf.contrib.metrics.streaming_mean(self.gen_loss)
 
         gen_optim = tf.train.AdamOptimizer(self.g_lr, beta1=self.beta1)
         gen_grads_vars = gen_optim.compute_gradients(self.gen_loss, var_list=gen_vars)
@@ -100,14 +98,14 @@ class CoopNet(object):
 
     def langevin_dynamics_descriptor(self, syn_arg):
         def cond(i, syn):
-             return tf.less(i,self.t1)
+            return tf.less(i, self.t1)
 
         def body(i, syn):
-             noise = tf.random_normal(shape=[self.num_chain, self.image_size, self.image_size, 3], name='noise')
-             syn_res = self.descriptor(syn, reuse=True)
-             grad = tf.gradients(syn_res, syn, name='grad_des')[0]
-             syn = syn - 0.5 * self.delta1 * self.delta1 * (syn / self.sigma1 / self.sigma1 - grad) + self.delta1 * noise
-             return tf.add(i,1), syn
+            noise = tf.random_normal(shape=[self.num_chain, self.image_size, self.image_size, 3], name='noise')
+            syn_res = self.descriptor(syn, reuse=True)
+            grad = tf.gradients(syn_res, syn, name='grad_des')[0]
+            syn = syn - 0.5 * self.delta1 * self.delta1 * (syn / self.sigma1 / self.sigma1 - grad) + self.delta1 * noise
+            return tf.add(i, 1), syn
 
         with tf.name_scope("langevin_dynamics_descriptor"):
             i = tf.constant(0)
@@ -154,18 +152,15 @@ class CoopNet(object):
         tf.get_default_graph().finalize()
 
         # store graph in protobuf
-        with open(self.model_dir + '/graphpb.txt', 'w') as f:
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+        with open(self.model_dir + '/graph.proto', 'w') as f:
             f.write(str(tf.get_default_graph().as_graph_def()))
 
         # train
         for epoch in xrange(self.num_epochs):
 
-            widgets = ["Epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
-            bar = ProgressBar(maxval=num_batches, widgets=widgets, fd=sys.stdout)
-            bar.start()
-
             for i in xrange(num_batches):
-                bar.update(i+1)
 
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
 
@@ -177,34 +172,34 @@ class CoopNet(object):
                     syn = sess.run(langevin_descriptor, feed_dict={self.syn: g_res})
                 # Step G1: update X using Y as training image
                 if self.t2 > 0:
-                    z_vec = sess.run(langevin_generator, feed_dict={self.z: z_vec, self.obs: syn, self.gen_res: g_res})
+                    z_vec = sess.run(langevin_generator, feed_dict={self.z: z_vec, self.obs: syn})
                 # Step D2: update D net
-                sess.run([self.des_loss_update, self.apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
+                d_loss = sess.run([self.des_loss, self.des_loss_update, self.apply_d_grads],
+                                  feed_dict={self.obs: obs_data, self.syn: syn})[0]
                 # Step G2: update G net
-                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
-                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
+                g_loss = sess.run([self.gen_loss, self.gen_loss_update, self.apply_g_grads],
+                                  feed_dict={self.obs: syn, self.z: z_vec})[0]
 
                 # Compute MSE
-                sess.run(self.recon_err_update, feed_dict={self.obs: obs_data, self.syn: syn})
+                mse = sess.run([self.recon_err, self.recon_err_update],
+                               feed_dict={self.obs: obs_data, self.syn: syn})[0]
 
                 sample_results[i * self.num_chain:(i + 1) * self.num_chain] = syn
-
+                print('Epoch #{:d}, [{:2d}]/[{:2d}], descriptor loss: {:.4f}, generator loss: {:.4f}, '
+                      'L2 distance: {:4.4f}'.format(epoch, i+1, num_batches, d_loss, g_loss, mse))
                 if i == 0 and epoch % self.log_step == 0:
                     if not os.path.exists(self.sample_dir):
                         os.makedirs(self.sample_dir)
                     saveSampleResults(syn, "%s/des%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
                     saveSampleResults(g_res, "%s/gen%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
 
-            bar.finish()
-
-            [des_loss_avg, gen_loss_avg, mse, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
-                                                                   self.recon_err_mean,
-                                                                   self.summary_op])
-
+            [des_loss_avg, gen_loss_avg, mse_avg, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
+                                                                       self.recon_err_mean,
+                                                                       self.summary_op])
 
             # log
-            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, '
-                'Avg MSE: {:4.4f}'.format(epoch, des_loss_avg, gen_loss_avg, mse))
+            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, avg. L2 distance: {:4.4f}'.format(
+                epoch, des_loss_avg, gen_loss_avg, mse_avg))
             writer.add_summary(summary, epoch)
             writer.flush()
 
