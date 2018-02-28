@@ -3,7 +3,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
 from progressbar import ETA, Bar, Percentage, ProgressBar
 from six.moves import xrange
 
@@ -55,19 +54,19 @@ class CoopNet(object):
         elif self.type == 'object_small':
             self.z_size = 2
 
-        self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32)
-        self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32)
+        self.syn = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32, name='syn')
+        self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32, name='obs')
+        self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32, name='z')
 
     def build_model(self):
         self.gen_res = self.generator(self.z, reuse=False)
 
         obs_res = self.descriptor(self.obs, reuse=False)
         syn_res = self.descriptor(self.syn, reuse=True)
-        self.dLdI = tf.gradients(syn_res, self.syn)[0]
 
         self.recon_err_mean, self.recon_err_update = tf.contrib.metrics.streaming_mean_squared_error(
             tf.reduce_mean(self.syn, axis=0), tf.reduce_mean(self.obs, axis=0))
+
 
         # descriptor variables
         des_vars = [var for var in tf.trainable_variables() if var.name.startswith('des')]
@@ -81,15 +80,15 @@ class CoopNet(object):
         # update by mean of gradients
         self.apply_d_grads = des_optim.apply_gradients(des_grads_vars)
 
+
         # generator variables
         gen_vars = [var for var in tf.trainable_variables() if var.name.startswith('gen')]
 
-        gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res), axis=0)
-        self.gen_loss_mean, self.gen_loss_update = tf.contrib.metrics.streaming_mean(tf.reduce_mean(gen_loss))
-        self.dLdZ = tf.gradients(gen_loss, self.z)[0]
+        self.gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res), axis=0)
+        self.gen_loss_mean, self.gen_loss_update = tf.contrib.metrics.streaming_mean(tf.reduce_mean(self.gen_loss))
 
         gen_optim = tf.train.AdamOptimizer(self.g_lr, beta1=self.beta1)
-        gen_grads_vars = gen_optim.compute_gradients(gen_loss, var_list=gen_vars)
+        gen_grads_vars = gen_optim.compute_gradients(self.gen_loss, var_list=gen_vars)
         gen_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in gen_grads_vars if '/w' in var.name]
         self.apply_g_grads = gen_optim.apply_gradients(gen_grads_vars)
 
@@ -99,22 +98,36 @@ class CoopNet(object):
 
         self.summary_op = tf.summary.merge_all()
 
-    def langevin_dynamics_descriptor(self, sess, samples, batch_id):
-        for i in xrange(self.t1):
-            noise = np.random.randn(*samples.shape)
-            grad = sess.run(self.dLdI, feed_dict={self.syn: samples})
-            samples = samples - 0.5 * self.delta1 * self.delta1 * (samples / self.sigma1 / self.sigma1 - grad) \
-                      + self.delta1 * noise
-            self.pbar.update(batch_id * self.t1 + i + 1)
-        return samples
+    def langevin_dynamics_descriptor(self, syn_arg):
+        def cond(i, syn):
+             return tf.less(i,self.t1)
 
-    def langevin_dynamics_generator(self, sess, z, img, batch_id):
-        for i in xrange(self.t2):
-            noise = np.random.randn(*z.shape)
-            grad = sess.run(self.dLdZ, feed_dict={self.obs: img, self.z: z})
+        def body(i, syn):
+             noise = tf.random_normal(shape=[self.num_chain, self.image_size, self.image_size, 3], name='noise')
+             syn_res = self.descriptor(syn, reuse=True)
+             grad = tf.gradients(syn_res, syn, name='grad_des')[0]
+             syn = syn - 0.5 * self.delta1 * self.delta1 * (syn / self.sigma1 / self.sigma1 - grad) + self.delta1 * noise
+             return tf.add(i,1), syn
+
+        with tf.name_scope("langevin_dynamics_descriptor"):
+            i = tf.constant(0)
+            i, syn = tf.while_loop(cond, body, [i, syn_arg])
+            return syn
+
+    def langevin_dynamics_generator(self, z_arg):
+        def cond(i, z):
+            return tf.less(i, self.t2)
+
+        def body(i, z):
+            noise = tf.random_normal(shape=[self.num_chain, self.z_size], name='noise')
+            grad = tf.gradients(self.gen_loss, z_arg, name='grad_gen')[0]
             z = z - 0.5 * self.delta2 * self.delta2 * (z + grad) + self.delta2 * noise
-            self.pbar.update(batch_id * self.t2 + i + 1)
-        return z
+            return tf.add(i, 1), z
+
+        with tf.name_scope("langevin_dynamics_generator"):
+            i = tf.constant(0)
+            i, z = tf.while_loop(cond, body, [i, z_arg])
+            return z
 
     def train(self, sess):
         self.build_model()
@@ -133,25 +146,42 @@ class CoopNet(object):
 
         writer = tf.summary.FileWriter(self.log_dir, sess.graph)
 
+        # symbolic langevins
+        langevin_descriptor = self.langevin_dynamics_descriptor(self.syn)
+        langevin_generator = self.langevin_dynamics_generator(self.z)
+
+        # make graph immutable
+        tf.get_default_graph().finalize()
+
+        # store graph in protobuf
+        with open(self.model_dir + '/graphpb.txt', 'w') as f:
+            f.write(str(tf.get_default_graph().as_graph_def()))
+
+        # train
         for epoch in xrange(self.num_epochs):
 
             widgets = ["Epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
-            self.pbar = ProgressBar(maxval=num_batches * (self.t1 + self.t2),
-                                    widgets=widgets)
-            self.pbar.start()
+            bar = ProgressBar(maxval=num_batches, widgets=widgets, fd=sys.stdout)
+            bar.start()
 
             for i in xrange(num_batches):
+                bar.update(i+1)
+
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
-                z_vec = np.random.randn(self.num_chain, self.z_size)
+
                 # Step G0: generate X ~ N(0, 1)
+                z_vec = np.random.randn(self.num_chain, self.z_size)
                 g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
                 # Step D1: obtain synthesized images Y
-                syn = self.langevin_dynamics_descriptor(sess, g_res, i)
+                if self.t1 > 0:
+                    syn = sess.run(langevin_descriptor, feed_dict={self.syn: g_res})
                 # Step G1: update X using Y as training image
-                z_vec = self.langevin_dynamics_generator(sess, z_vec, syn, i)
+                if self.t2 > 0:
+                    z_vec = sess.run(langevin_generator, feed_dict={self.z: z_vec, self.obs: syn, self.gen_res: g_res})
                 # Step D2: update D net
                 sess.run([self.des_loss_update, self.apply_d_grads], feed_dict={self.obs: obs_data, self.syn: syn})
                 # Step G2: update G net
+                sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
                 sess.run([self.gen_loss_update, self.apply_g_grads], feed_dict={self.obs: syn, self.z: z_vec})
 
                 # Compute MSE
@@ -165,17 +195,18 @@ class CoopNet(object):
                     saveSampleResults(syn, "%s/des%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
                     saveSampleResults(g_res, "%s/gen%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
 
-            self.pbar.finish()
+            bar.finish()
 
             [des_loss_avg, gen_loss_avg, mse, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
                                                                    self.recon_err_mean,
                                                                    self.summary_op])
 
-            print('Epoch #{:d}, descriptor loss: {:.4f},  generator loss: {:.4f}, Avg MSE: {:4.4f}'.format(epoch,
-                                                                                                           des_loss_avg,
-                                                                                                           gen_loss_avg,
-                                                                                                           mse))
+
+            # log
+            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, '
+                'Avg MSE: {:4.4f}'.format(epoch, des_loss_avg, gen_loss_avg, mse))
             writer.add_summary(summary, epoch)
+            writer.flush()
 
             if epoch % self.log_step == 0:
                 if not os.path.exists(self.model_dir):
@@ -183,7 +214,7 @@ class CoopNet(object):
                 saver.save(sess, "%s/%s" % (self.model_dir, 'model.ckpt'), global_step=epoch)
 
     def test(self, sess, ckpt, sample_size):
-        assert (ckpt != None, 'no checkpoint provided.')
+        assert ckpt is not None, 'no checkpoint provided.'
 
         gen_res = self.generator(self.z, reuse=False)
 
