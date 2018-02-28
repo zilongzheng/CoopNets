@@ -150,7 +150,7 @@ class CoopNet(object):
 
         writer = tf.summary.FileWriter(self.log_dir, sess.graph)
 
-        # unrolled langevins
+        # symbolic langevins
         langevin_descriptor = self.langevin_dynamics_descriptor(self.syn)
         langevin_generator = self.langevin_dynamics_generator(self.z)
 
@@ -161,19 +161,20 @@ class CoopNet(object):
         with open(self.model_dir + '/graphpb.txt', 'w') as f:
             f.write(str(tf.get_default_graph().as_graph_def()))
 
+        # train
         for epoch in xrange(self.num_epochs):
 
             widgets = ["Epoch #%d|" % epoch, Percentage(), Bar(), ETA()]
-            pbar = ProgressBar(maxval=num_batches, widgets=widgets, fd=sys.stdout)
-            pbar.start()
+            bar = ProgressBar(maxval=num_batches, widgets=widgets, fd=sys.stdout)
+            bar.start()
 
             for i in xrange(num_batches):
-                pbar.update(i+1)
+                bar.update(i+1)
 
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
-                z_vec = np.random.randn(self.num_chain, self.z_size)
 
                 # Step G0: generate X ~ N(0, 1)
+                z_vec = np.random.randn(self.num_chain, self.z_size)
                 g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
                 # Step D1: obtain synthesized images Y
                 if self.t1 > 0:
@@ -198,7 +199,7 @@ class CoopNet(object):
                     saveSampleResults(syn, "%s/des%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
                     saveSampleResults(g_res, "%s/gen%03d.png" % (self.sample_dir, epoch), col_num=self.nTileCol)
 
-            pbar.finish()
+            bar.finish()
 
             [des_loss_avg, gen_loss_avg, mse, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
                                                                    self.recon_err_mean,
