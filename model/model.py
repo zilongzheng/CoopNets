@@ -207,7 +207,7 @@ class CoopNet(object):
 
 
             # log
-            print('Epoch #{:d}, descriptor loss: {:.4f},generator loss: {:.4f}, '
+            print('Epoch #{:d}, descriptor loss: {:.4f}, generator loss: {:.4f}, '
                 'Avg MSE: {:4.4f}'.format(epoch, des_loss_avg, gen_loss_avg, mse))
             writer.add_summary(summary, epoch)
             writer.flush()
