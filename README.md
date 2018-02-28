@@ -21,7 +21,7 @@ synthesized results will be saved in `./output/rock/synthesis`
 
 To test generator by synthesizing interpolation results with trained model:
 
-    $ python main.py --test --category rock --output_dir ./output --ckpt ./output/rock/checkpoints/model.ckpt --sample_size 144
+    $ python main.py --test --sample_size 144 --category rock --output_dir ./output --ckpt ./output/rock/checkpoints/model.ckpt
 testing results will be saved in `./output/rock/test`
 
 ## Results
