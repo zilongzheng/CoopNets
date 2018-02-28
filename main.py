@@ -27,7 +27,7 @@ tf.flags.DEFINE_integer('gen_sample_steps', 0, 'Sample steps for Langevin dynami
 tf.flags.DEFINE_float('gen_step_size', 0.1, 'Step size for generator Langevin dynamics')
 
 tf.flags.DEFINE_string('data_dir', './data', 'The data directory')
-tf.flags.DEFINE_string('category', 'rock_arch', 'The name of dataset')
+tf.flags.DEFINE_string('category', 'rock', 'The name of dataset')
 tf.flags.DEFINE_string('output_dir', './output', 'The output directory for saving results')
 tf.flags.DEFINE_integer('log_step', 10, 'Number of epochs to save output results')
 tf.flags.DEFINE_boolean('test', False, 'True if in testing mode')
