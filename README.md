@@ -18,7 +18,7 @@ First, download Imagenet-scene dataset and save it to `./data` directory:
 
 To train a model with ***alp*** dataset:
 
-    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category alp --data_dir ./data/scene --batch_size 100 --output_dir ./output
+    $ python main.py --category alp --data_dir ./data/scene --output_dir ./output --num_epochs 200 --batch_size 100 --d_lr 0.01 --g_lr 0.0001
 synthesized results will be saved in `./output/alp/synthesis`
 
 To test generator by synthesizing interpolation results with trained model:

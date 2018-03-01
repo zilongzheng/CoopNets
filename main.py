@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from model.model import CoopNet
+from model.model import CoopNets
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -36,7 +36,7 @@ tf.flags.DEFINE_integer('sample_size', 100, 'Number of images to generate during
 
 
 def main(_):
-    model = CoopNet(
+    model = CoopNets(
         net_type='object',
         num_epochs=FLAGS.num_epochs,
         image_size=FLAGS.image_size,
