@@ -12,19 +12,22 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 
 ## Usage
 
-First, download [dataset](https://drive.google.com/file/d/1RZ2zfYhoq714uvlan7V8mHeUb9XpJqWq/view?usp=sharing) and save it to `./data` directory.
+First, download Imagenet-scene dataset and save it to `./data` directory:
 
-To train a model with ***rock*** dataset:
+    $ python download.py scene
 
-    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category rock --data_dir ./data --batch_size 100 --output_dir ./output
-synthesized results will be saved in `./output/rock/synthesis`
+To train a model with ***alp*** dataset:
+
+    $ python main.py --num_epochs 200 --d_lr 0.01 --g_lr 0.0001 --category alp --data_dir ./data/scene --batch_size 100 --output_dir ./output
+synthesized results will be saved in `./output/alp/synthesis`
 
 To test generator by synthesizing interpolation results with trained model:
 
-    $ python main.py --test --sample_size 144 --category rock --output_dir ./output --ckpt ./output/rock/checkpoints/model.ckpt
-testing results will be saved in `./output/rock/test`
+    $ python main.py --test --sample_size 144 --category alp --output_dir ./output --ckpt ./output/alp/checkpoints/model.ckpt
+testing results will be saved in `./output/alp/test`
 
 ## Results
+### Results of MIT Place205 dataset
 **Descriptor result**
 ![descriptor](assets/descriptor.png)
 
