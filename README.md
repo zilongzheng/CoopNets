@@ -12,7 +12,7 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 
 ## Usage
 
-First, download [dataset](http://www.stat.ucla.edu/~ywu/CoopNets/main.html) and save it to `./data` directory.
+First, download [dataset](https://drive.google.com/file/d/1RZ2zfYhoq714uvlan7V8mHeUb9XpJqWq/view?usp=sharing) and save it to `./data` directory.
 
 To train a model with ***rock*** dataset:
 

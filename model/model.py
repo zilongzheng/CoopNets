@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import time
 from six.moves import xrange
 
 from model.utils.interpolate import *
@@ -159,7 +160,7 @@ class CoopNet(object):
 
         # train
         for epoch in xrange(self.num_epochs):
-
+            start_time = time.time()
             for i in xrange(num_batches):
 
                 obs_data = train_data[i * self.batch_size:min(len(train_data), (i + 1) * self.batch_size)]
@@ -195,10 +196,9 @@ class CoopNet(object):
 
             [des_loss_avg, gen_loss_avg, mse_avg, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
                                                                        self.recon_err_mean, self.summary_op])
-
-            # log
-            print('Epoch #{:d}, avg. descriptor loss: {:.4f}, avg. generator loss: {:.4f},'
-                  ' avg. L2 distance: {:4.4f}'.format(epoch, des_loss_avg, gen_loss_avg, mse_avg))
+            end_time = time.time()
+            print('Epoch #{:d}, avg. descriptor loss: {:.4f}, avg. generator loss: {:.4f}, avg. L2 distance: {:4.4f}, '
+                  'time: {:.2f}s'.format(epoch, des_loss_avg, gen_loss_avg, mse_avg, end_time - start_time))
             writer.add_summary(summary, epoch)
             writer.flush()
 
