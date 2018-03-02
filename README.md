@@ -8,7 +8,6 @@ This repository contains a tensorflow implementation for the paper "[Cooperative
 - [Tensorflow r1.0+](https://www.tensorflow.org/install/)
 - [Scipy](https://www.scipy.org/install.html)
 - [pillow](https://pillow.readthedocs.io/en/latest/installation.html)
-- [progressbar](http://progressbar-2.readthedocs.io/en/latest/index.html)
 
 ## Usage
 

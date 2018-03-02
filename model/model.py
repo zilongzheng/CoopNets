@@ -47,6 +47,18 @@ class CoopNets(object):
             tf.gfile.DeleteRecursively(self.log_dir)
         tf.gfile.MakeDirs(self.log_dir)
 
+        if tf.gfile.Exists(self.sample_dir):
+            tf.gfile.DeleteRecursively(self.sample_dir)
+        tf.gfile.MakeDirs(self.sample_dir)
+
+        if tf.gfile.Exists(self.interp_dir):
+            tf.gfile.DeleteRecursively(self.interp_dir)
+        tf.gfile.MakeDirs(self.interp_dir)
+
+        if tf.gfile.Exists(self.model_dir):
+            tf.gfile.DeleteRecursively(self.model_dir)
+        tf.gfile.MakeDirs(self.model_dir)
+
         if self.type == 'texture':
             self.z_size = 49
         elif self.type == 'object':
