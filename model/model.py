@@ -150,8 +150,6 @@ class CoopNets(object):
         tf.get_default_graph().finalize()
 
         # store graph in protobuf
-        if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
         with open(self.model_dir + '/graph.proto', 'w') as f:
             f.write(str(tf.get_default_graph().as_graph_def()))
 
