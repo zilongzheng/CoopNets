@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import tensorflow as tf
 from model.model import CoopNets
 
@@ -36,6 +37,12 @@ tf.flags.DEFINE_integer('sample_size', 100, 'Number of images to generate during
 
 
 def main(_):
+    output_dir = os.path.join(FLAGS.output_dir, FLAGS.category)
+    sample_dir = os.path.join(output_dir, 'synthesis')
+    log_dir = os.path.join(output_dir, 'log')
+    model_dir = os.path.join(output_dir, 'checkpoints')
+    test_dir = os.path.join(output_dir, 'test')
+
     model = CoopNets(
         net_type='object',
         num_epochs=FLAGS.num_epochs,
@@ -47,13 +54,30 @@ def main(_):
         des_refsig=FLAGS.des_refsig, gen_refsig=FLAGS.gen_refsig,
         des_step_size=FLAGS.des_step_size, gen_step_size=FLAGS.gen_step_size,
         des_sample_steps=FLAGS.des_sample_steps, gen_sample_steps=FLAGS.gen_sample_steps,
-        log_step=FLAGS.log_step, data_path=FLAGS.data_dir, category=FLAGS.category, output_dir=FLAGS.output_dir
+        log_step=FLAGS.log_step, data_path=FLAGS.data_dir, category=FLAGS.category,
+        sample_dir=sample_dir, log_dir=log_dir, model_dir=model_dir, test_dir=test_dir
     )
 
     with tf.Session() as sess:
         if FLAGS.test:
+            if tf.gfile.Exists(test_dir):
+                tf.gfile.DeleteRecursively(test_dir)
+            tf.gfile.MakeDirs(test_dir)
+
             model.test(sess, FLAGS.ckpt, FLAGS.sample_size)
         else:
+            if tf.gfile.Exists(log_dir):
+                tf.gfile.DeleteRecursively(log_dir)
+            tf.gfile.MakeDirs(log_dir)
+
+            if tf.gfile.Exists(sample_dir):
+                tf.gfile.DeleteRecursively(sample_dir)
+            tf.gfile.MakeDirs(sample_dir)
+
+            if tf.gfile.Exists(model_dir):
+                tf.gfile.DeleteRecursively(model_dir)
+            tf.gfile.MakeDirs(model_dir)
+
             model.train(sess)
 
 

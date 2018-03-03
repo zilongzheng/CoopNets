@@ -12,10 +12,12 @@ from model.utils.data_io import DataSet, saveSampleResults
 
 
 class CoopNets(object):
-    def __init__(self, num_epochs=200, image_size=64, batch_size=100, nTileRow=12, nTileCol=12, d_lr=0.001, g_lr=0.0001,
-                 beta1=0.5, gen_refsig=0.3, des_refsig=0.016, des_step_size=0.002, des_sample_steps=10,
-                 gen_step_size=0.1, gen_sample_steps=0, net_type='object', log_step=10,
-                 data_path='/tmp/data/', category='rock', output_dir='./output'):
+    def __init__(self, num_epochs=200, image_size=64, batch_size=100, nTileRow=12, nTileCol=12, net_type='object',
+                 d_lr=0.001, g_lr=0.0001, beta1=0.5,
+                 des_step_size=0.002, des_sample_steps=10, des_refsig=0.016,
+                 gen_step_size=0.1, gen_sample_steps=0, gen_refsig=0.3,
+                 data_path='/tmp/data/', log_step=10, category='rock',
+                 sample_dir='./synthesis', model_dir='./checkpoints', log_dir='./log', test_dir='./test'):
         self.type = net_type
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -36,28 +38,11 @@ class CoopNets(object):
 
         self.data_path = os.path.join(data_path, category)
         self.log_step = log_step
-        self.output_dir = os.path.join(output_dir, category)
 
-        self.log_dir = os.path.join(self.output_dir, 'log')
-        self.sample_dir = os.path.join(self.output_dir, 'synthesis')
-        self.interp_dir = os.path.join(self.output_dir, 'interpolation')
-        self.model_dir = os.path.join(self.output_dir, 'checkpoints')
-
-        if tf.gfile.Exists(self.log_dir):
-            tf.gfile.DeleteRecursively(self.log_dir)
-        tf.gfile.MakeDirs(self.log_dir)
-
-        if tf.gfile.Exists(self.sample_dir):
-            tf.gfile.DeleteRecursively(self.sample_dir)
-        tf.gfile.MakeDirs(self.sample_dir)
-
-        if tf.gfile.Exists(self.interp_dir):
-            tf.gfile.DeleteRecursively(self.interp_dir)
-        tf.gfile.MakeDirs(self.interp_dir)
-
-        if tf.gfile.Exists(self.model_dir):
-            tf.gfile.DeleteRecursively(self.model_dir)
-        tf.gfile.MakeDirs(self.model_dir)
+        self.log_dir = log_dir
+        self.sample_dir = sample_dir
+        self.model_dir = model_dir
+        self.test_dir = test_dir
 
         if self.type == 'texture':
             self.z_size = 49
@@ -232,19 +217,15 @@ class CoopNets(object):
         saver.restore(sess, ckpt)
         print('Loading checkpoint {}.'.format(ckpt))
 
-        test_dir = os.path.join(self.output_dir, 'test')
-        if not os.path.exists(test_dir):
-            os.makedirs(test_dir)
-
         for i in xrange(num_batches):
             z_vec = np.random.randn(min(sample_size, self.num_chain), self.z_size)
             g_res = sess.run(gen_res, feed_dict={self.z: z_vec})
-            saveSampleResults(g_res, "%s/gen%03d.png" % (test_dir, i), col_num=self.nTileCol)
+            saveSampleResults(g_res, "%s/gen%03d.png" % (self.test_dir, i), col_num=self.nTileCol)
 
             # output interpolation results
             interp_z = linear_interpolator(z_vec, npairs=self.nTileRow, ninterp=self.nTileCol)
             interp = sess.run(gen_res, feed_dict={self.z: interp_z})
-            saveSampleResults(interp, "%s/interp%03d.png" % (test_dir, i), col_num=self.nTileCol)
+            saveSampleResults(interp, "%s/interp%03d.png" % (self.test_dir, i), col_num=self.nTileCol)
             sample_size = sample_size - self.num_chain
 
     def descriptor(self, inputs, reuse=False):
