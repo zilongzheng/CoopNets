@@ -88,6 +88,10 @@ class CoopNets(object):
         gen_grads = [tf.reduce_mean(tf.abs(grad)) for (grad, var) in gen_grads_vars if '/w' in var.name]
         self.apply_g_grads = gen_optim.apply_gradients(gen_grads_vars)
 
+        # symbolic langevins
+        self.langevin_descriptor = self.langevin_dynamics_descriptor(self.syn)
+        self.langevin_generator = self.langevin_dynamics_generator(self.z)
+
         tf.summary.scalar('des_loss', self.des_loss_mean)
         tf.summary.scalar('gen_loss', self.gen_loss_mean)
         tf.summary.scalar('recon_err', self.recon_err_mean)
@@ -142,10 +146,6 @@ class CoopNets(object):
 
         writer = tf.summary.FileWriter(self.log_dir, sess.graph)
 
-        # symbolic langevins
-        langevin_descriptor = self.langevin_dynamics_descriptor(self.syn)
-        langevin_generator = self.langevin_dynamics_generator(self.z)
-
         # make graph immutable
         tf.get_default_graph().finalize()
 
@@ -167,10 +167,10 @@ class CoopNets(object):
                 g_res = sess.run(self.gen_res, feed_dict={self.z: z_vec})
                 # Step D1: obtain synthesized images Y
                 if self.t1 > 0:
-                    syn = sess.run(langevin_descriptor, feed_dict={self.syn: g_res})
+                    syn = sess.run(self.langevin_descriptor, feed_dict={self.syn: g_res})
                 # Step G1: update X using Y as training image
                 if self.t2 > 0:
-                    z_vec = sess.run(langevin_generator, feed_dict={self.z: z_vec, self.obs: syn})
+                    z_vec = sess.run(self.langevin_generator, feed_dict={self.z: z_vec, self.obs: syn})
                 # Step D2: update D net
                 d_loss = sess.run([self.des_loss, self.des_loss_update, self.apply_d_grads],
                                   feed_dict={self.obs: obs_data, self.syn: syn})[0]
