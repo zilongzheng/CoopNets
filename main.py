@@ -33,7 +33,7 @@ tf.flags.DEFINE_string('output_dir', './output', 'The output directory for savin
 tf.flags.DEFINE_integer('log_step', 10, 'Number of epochs to save output results')
 tf.flags.DEFINE_boolean('test', False, 'True if in testing mode')
 tf.flags.DEFINE_string('ckpt', None, 'Checkpoint path to load')
-tf.flags.DEFINE_integer('sample_size', 100, 'Number of images to generate during test.')
+tf.flags.DEFINE_integer('sample_size', 144, 'Number of images to generate during test.')
 
 
 def main(_):
