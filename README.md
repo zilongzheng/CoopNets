@@ -26,7 +26,7 @@ To test generator by synthesizing interpolation results with trained model:
 testing results will be saved in `./output/alp/test`
 
 ## Results
-### Results of MIT Place205 dataset
+### Results of [MIT Place205](http://places.csail.mit.edu) dataset
 **Descriptor result**
 ![descriptor](assets/descriptor.png)
 
