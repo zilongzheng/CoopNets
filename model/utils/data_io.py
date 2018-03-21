@@ -15,7 +15,7 @@ IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm']
 class DataSet(object):
     def __init__(self, data_path, image_size=128):
         self.root_dir = data_path
-        self.imgList = [f for f in os.listdir(data_path) if any(f.endswith(ext) for ext in IMG_EXTENSIONS)]
+        self.imgList = [f for f in os.listdir(data_path) if any(f.lower().endswith(ext) for ext in IMG_EXTENSIONS)]
         self.imgList.sort()
         self.image_size = image_size
         self.images = np.zeros((len(self.imgList), image_size, image_size, 3)).astype(float)

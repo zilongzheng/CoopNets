@@ -68,7 +68,7 @@ class CoopNets(object):
         # descriptor variables
         des_vars = [var for var in tf.trainable_variables() if var.name.startswith('des')]
 
-        self.des_loss = tf.reduce_mean(tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0)))
+        self.des_loss = tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0))
         self.des_loss_mean, self.des_loss_update = tf.contrib.metrics.streaming_mean(self.des_loss)
 
         des_optim = tf.train.AdamOptimizer(self.d_lr, beta1=self.beta1)
@@ -80,7 +80,8 @@ class CoopNets(object):
         # generator variables
         gen_vars = [var for var in tf.trainable_variables() if var.name.startswith('gen')]
 
-        self.gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res))
+        self.gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res),
+                                       axis=0)
         self.gen_loss_mean, self.gen_loss_update = tf.contrib.metrics.streaming_mean(self.gen_loss)
 
         gen_optim = tf.train.AdamOptimizer(self.g_lr, beta1=self.beta1)
@@ -182,7 +183,7 @@ class CoopNets(object):
 
                 sample_results[i * self.num_chain:(i + 1) * self.num_chain] = syn
                 print('Epoch #{:d}, [{:2d}]/[{:2d}], descriptor loss: {:.4f}, generator loss: {:.4f}, '
-                      'L2 distance: {:4.4f}'.format(epoch, i+1, num_batches, d_loss, g_loss, mse))
+                      'L2 distance: {:4.4f}'.format(epoch, i + 1, num_batches, d_loss.mean(), g_loss.mean(), mse))
                 if i == 0 and epoch % self.log_step == 0:
                     if not os.path.exists(self.sample_dir):
                         os.makedirs(self.sample_dir)
@@ -192,7 +193,7 @@ class CoopNets(object):
             [des_loss_avg, gen_loss_avg, mse_avg, summary] = sess.run([self.des_loss_mean, self.gen_loss_mean,
                                                                        self.recon_err_mean, self.summary_op])
             end_time = time.time()
-            print('Epoch #{:d}, avg. descriptor loss: {:.4f}, avg. generator loss: {:.4f}, avg. L2 distance: {:4.4f}, '
+            print('Epoch #{:d}, avg.descriptor loss: {:.4f}, avg.generator loss: {:.4f}, avg.L2 distance: {:4.4f}, '
                   'time: {:.2f}s'.format(epoch, des_loss_avg, gen_loss_avg, mse_avg, end_time - start_time))
             writer.add_summary(summary, epoch)
             writer.flush()
