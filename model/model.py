@@ -55,6 +55,8 @@ class CoopNets(object):
         self.obs = tf.placeholder(shape=[None, self.image_size, self.image_size, 3], dtype=tf.float32, name='obs')
         self.z = tf.placeholder(shape=[None, self.z_size], dtype=tf.float32, name='z')
 
+        self.debug = False
+
     def build_model(self):
         self.gen_res = self.generator(self.z, reuse=False)
 
@@ -121,7 +123,10 @@ class CoopNets(object):
 
         def body(i, z):
             noise = tf.random_normal(shape=[self.num_chain, self.z_size], name='noise')
-            grad = tf.gradients(self.gen_loss, z_arg, name='grad_gen')[0]
+            gen_res = self.generator(z, reuse=True)
+            gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - gen_res),
+                                       axis=0)
+            grad = tf.gradients(gen_loss, z, name='grad_gen')[0]
             z = z - 0.5 * self.delta2 * self.delta2 * (z + grad) + self.delta2 * noise
             return tf.add(i, 1), z
 
@@ -182,8 +187,9 @@ class CoopNets(object):
                                feed_dict={self.obs: obs_data, self.syn: syn})[0]
 
                 sample_results[i * self.num_chain:(i + 1) * self.num_chain] = syn
-                print('Epoch #{:d}, [{:2d}]/[{:2d}], descriptor loss: {:.4f}, generator loss: {:.4f}, '
-                      'L2 distance: {:4.4f}'.format(epoch, i + 1, num_batches, d_loss.mean(), g_loss.mean(), mse))
+                if self.debug:
+                    print('Epoch #{:d}, [{:2d}]/[{:2d}], descriptor loss: {:.4f}, generator loss: {:.4f}, '
+                          'L2 distance: {:4.4f}'.format(epoch, i + 1, num_batches, d_loss.mean(), g_loss.mean(), mse))
                 if i == 0 and epoch % self.log_step == 0:
                     if not os.path.exists(self.sample_dir):
                         os.makedirs(self.sample_dir)

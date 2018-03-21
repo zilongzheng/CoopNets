@@ -29,7 +29,7 @@ tf.flags.DEFINE_float('gen_step_size', 0.1, 'Step size for generator Langevin dy
 
 tf.flags.DEFINE_string('data_dir', './data/scene', 'The data directory')
 tf.flags.DEFINE_string('category', 'alp', 'The name of dataset')
-tf.flags.DEFINE_string('output_dir', './output1', 'The output directory for saving results')
+tf.flags.DEFINE_string('output_dir', './output', 'The output directory for saving results')
 tf.flags.DEFINE_integer('log_step', 10, 'Number of epochs to save output results')
 tf.flags.DEFINE_boolean('test', False, 'True if in testing mode')
 tf.flags.DEFINE_string('ckpt', None, 'Checkpoint path to load')
