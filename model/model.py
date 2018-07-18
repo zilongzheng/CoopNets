@@ -70,7 +70,7 @@ class CoopNets(object):
         # descriptor variables
         des_vars = [var for var in tf.trainable_variables() if var.name.startswith('des')]
 
-        self.des_loss = tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0))
+        self.des_loss = tf.reduce_sum(tf.subtract(tf.reduce_mean(syn_res, axis=0), tf.reduce_mean(obs_res, axis=0)))
 
         des_optim = tf.train.AdamOptimizer(self.d_lr, beta1=self.beta1)
         des_grads_vars = des_optim.compute_gradients(self.des_loss, var_list=des_vars)
@@ -81,8 +81,8 @@ class CoopNets(object):
         # generator variables
         gen_vars = [var for var in tf.trainable_variables() if var.name.startswith('gen')]
 
-        self.gen_loss = tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res),
-                                       axis=0)
+        self.gen_loss = tf.reduce_sum(tf.reduce_mean(1.0 / (2 * self.sigma2 * self.sigma2) * tf.square(self.obs - self.gen_res),
+                                       axis=0))
 
         gen_optim = tf.train.AdamOptimizer(self.g_lr, beta1=self.beta1)
         gen_grads_vars = gen_optim.compute_gradients(self.gen_loss, var_list=gen_vars)
@@ -189,11 +189,11 @@ class CoopNets(object):
                 mse = sess.run(self.recon_err, feed_dict={self.obs: syn, self.syn: g_res})
                 sample_results[i * self.num_chain:(i + 1) * self.num_chain] = syn
 
-                des_loss_avg.append(d_loss.mean())
-                gen_loss_avg.append(g_loss.mean())
+                des_loss_avg.append(d_loss)
+                gen_loss_avg.append(g_loss)
                 mse_avg.append(mse)
 
-                des_loss_vis.add_loss_val(epoch*num_batches + i, d_loss.mean() / float(self.image_size * self.image_size))
+                des_loss_vis.add_loss_val(epoch*num_batches + i, d_loss / float(self.image_size * self.image_size * 3))
                 gen_loss_vis.add_loss_val(epoch*num_batches + i, mse)
 
                 if self.debug:
